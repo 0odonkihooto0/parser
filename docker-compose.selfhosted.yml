@@ -70,17 +70,18 @@ services:
     restart: unless-stopped
 
   nuq-postgres:
-    image: ghcr.io/firecrawl/nuq-postgres:latest
+    image: postgres:17
     environment:
       - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./nuq-init.sql:/docker-entrypoint-initdb.d/010-nuq.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -tAc \"SELECT 1 FROM nuq.queue_scrape LIMIT 0\" >/dev/null 2>&1"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 30
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
