@@ -3,11 +3,16 @@ services:
     build: .
     ports:
       - "4000:4000"
+    hostname: parser-app.local
+    networks:
+      default:
+        aliases:
+          - parser-app.local
     environment:
       - PORT=4000
       - FIRECRAWL_API_KEY=local
       - FIRECRAWL_URL=http://firecrawl-api:3002
-      - APP_URL=http://app:4000
+      - APP_URL=http://parser-app.local:4000
       - DB_PATH=/app/data/parser.db
     volumes:
       - parser-data:/app/data
