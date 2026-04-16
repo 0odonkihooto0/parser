@@ -16,6 +16,7 @@ const firecrawlOpts = { apiKey: process.env.FIRECRAWL_API_KEY || 'local' };
 if (process.env.FIRECRAWL_URL) firecrawlOpts.apiUrl = process.env.FIRECRAWL_URL;
 const firecrawl = new FirecrawlApp(firecrawlOpts);
 
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 const uploadsDir = join(__dirname, 'uploads');
 if (!existsSync(uploadsDir)) mkdirSync(uploadsDir);
 
@@ -62,21 +63,15 @@ app.post('/api/scrape', async (req, res) => {
       rawMeta = { pagesCount: pages.length };
 
     } else if (mode === 'parse') {
-      const docFormats = ['xlsx', 'xls', 'docx', 'doc'];
+      const docFormats = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
 
-      if (ext === 'pdf') {
-        const result = await firecrawl.scrapeUrl(url, {
-          parsers: [{ type: 'pdf', mode: pdfMode }],
-        });
-        markdown = result.markdown ?? '';
-        rawMeta = result.metadata ?? null;
-      } else if (docFormats.includes(ext)) {
-        const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
-        markdown = result.markdown ?? '';
-        rawMeta = result.metadata ?? null;
-      } else {
+      if (!docFormats.includes(ext)) {
         return res.status(400).json({ error: 'Неподдерживаемый формат файла' });
       }
+
+      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
+      markdown = result.markdown ?? '';
+      rawMeta = result.metadata ?? null;
 
     } else {
       return res.status(400).json({ error: 'mode должен быть scrape, crawl или parse' });
@@ -135,24 +130,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     return res.status(400).json({ error: `Неподдерживаемый формат: .${ext}. Допустимо: ${allowed.join(', ')}` });
   }
 
-  const fileUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+  const fileUrl = `${APP_URL}/uploads/${req.file.filename}`;
   const startTime = Date.now();
 
   try {
-    let markdown = '';
-    let rawMeta = null;
-
-    if (ext === 'pdf') {
-      const result = await firecrawl.scrapeUrl(fileUrl, {
-        parsers: [{ type: 'pdf', mode: pdfMode }],
-      });
-      markdown = result.markdown ?? '';
-      rawMeta = result.metadata ?? null;
-    } else {
-      const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'] });
-      markdown = result.markdown ?? '';
-      rawMeta = result.metadata ?? null;
-    }
+    const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'] });
+    const markdown = result.markdown ?? '';
+    const rawMeta = result.metadata ?? null;
 
     const durationMs = Date.now() - startTime;
     const metadata = { ...(rawMeta || {}), fileType: ext, durationMs, originalName: req.file.originalname };
