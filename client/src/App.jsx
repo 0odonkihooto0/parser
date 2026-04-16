@@ -89,6 +89,84 @@ function UrlInput({ onSubmit, loading }) {
   );
 }
 
+// ── FileUpload ─────────────────────────────────────────
+
+const UPLOAD_EXTENSIONS = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+
+function FileUpload({ onResult, loading, setLoading, setError, fetchJobs }) {
+  const [dragOver, setDragOver] = useState(false);
+  const [pdfMode, setPdfMode] = useState('auto');
+  const [fileName, setFileName] = useState('');
+
+  const processFile = async (file) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!UPLOAD_EXTENSIONS.includes(ext)) {
+      setError(`Неподдерживаемый формат: .${ext}`);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setFileName(file.name);
+    onResult(null);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('pdfMode', pdfMode);
+
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки');
+      onResult({ id: data.id, markdown: data.markdown, metadata: data.metadata, status: 'success' });
+      fetchJobs();
+    } catch (err) {
+      setError(err.message);
+      fetchJobs();
+    } finally {
+      setLoading(false);
+      setFileName('');
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file) processFile(file);
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) processFile(file);
+    e.target.value = '';
+  };
+
+  return (
+    <div className="file-upload-section">
+      <div
+        className={`file-dropzone ${dragOver ? 'drag-over' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={handleDrop}
+      >
+        {loading && fileName
+          ? <span className="dropzone-text">Парсинг {fileName}...</span>
+          : <span className="dropzone-text">Перетащите файл сюда или <label className="file-label">выберите<input type="file" accept=".pdf,.xlsx,.xls,.docx,.doc" onChange={handleFileSelect} hidden /></label></span>
+        }
+        <span className="dropzone-hint">PDF, XLSX, XLS, DOCX, DOC (до 50 МБ)</span>
+      </div>
+      <div className="file-upload-controls">
+        <select value={pdfMode} onChange={(e) => setPdfMode(e.target.value)}>
+          <option value="auto">PDF: auto</option>
+          <option value="fast">PDF: fast</option>
+          <option value="ocr">PDF: ocr</option>
+        </select>
+      </div>
+    </div>
+  );
+}
+
 // ── ResultViewer ────────────────────────────────────────
 
 function ResultMeta({ metadata }) {
@@ -249,7 +327,17 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>Parser</h1>
-        <UrlInput onSubmit={handleSubmit} loading={loading} />
+        <div className="input-row">
+          <UrlInput onSubmit={handleSubmit} loading={loading} />
+          <div className="input-divider"><span>или</span></div>
+          <FileUpload
+            onResult={setActiveJob}
+            loading={loading}
+            setLoading={setLoading}
+            setError={setError}
+            fetchJobs={fetchJobs}
+          />
+        </div>
       </header>
 
       <div className="app-body">

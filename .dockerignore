@@ -9,3 +9,4 @@ client/dist
 *.db
 *.db-shm
 *.db-wal
+server/uploads

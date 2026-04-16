@@ -3,9 +3,12 @@ import express from 'express';
 import cors from 'cors';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { existsSync, mkdirSync, unlinkSync } from 'fs';
+import multer from 'multer';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { saveJob, updateJob, getAllJobs, getJobById, deleteJob } from './db.js';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
 
@@ -13,8 +16,20 @@ const firecrawlOpts = { apiKey: process.env.FIRECRAWL_API_KEY || 'local' };
 if (process.env.FIRECRAWL_URL) firecrawlOpts.apiUrl = process.env.FIRECRAWL_URL;
 const firecrawl = new FirecrawlApp(firecrawlOpts);
 
+const uploadsDir = join(__dirname, 'uploads');
+if (!existsSync(uploadsDir)) mkdirSync(uploadsDir);
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadsDir,
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(uploadsDir));
 
 // ── POST /api/scrape ────────────────────────────────────
 
@@ -104,6 +119,75 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
+// ── POST /api/upload ────────────────────────────────────
+
+app.post('/api/upload', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Файл не загружен' });
+  }
+
+  const { pdfMode = 'auto' } = req.body;
+  const ext = req.file.originalname.split('.').pop()?.toLowerCase();
+  const allowed = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+
+  if (!allowed.includes(ext)) {
+    unlinkSync(req.file.path);
+    return res.status(400).json({ error: `Неподдерживаемый формат: .${ext}. Допустимо: ${allowed.join(', ')}` });
+  }
+
+  const fileUrl = `http://localhost:${PORT}/uploads/${req.file.filename}`;
+  const startTime = Date.now();
+
+  try {
+    let markdown = '';
+    let rawMeta = null;
+
+    if (ext === 'pdf') {
+      const result = await firecrawl.scrapeUrl(fileUrl, {
+        parsers: [{ type: 'pdf', mode: pdfMode }],
+      });
+      markdown = result.markdown ?? '';
+      rawMeta = result.metadata ?? null;
+    } else {
+      const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'] });
+      markdown = result.markdown ?? '';
+      rawMeta = result.metadata ?? null;
+    }
+
+    const durationMs = Date.now() - startTime;
+    const metadata = { ...(rawMeta || {}), fileType: ext, durationMs, originalName: req.file.originalname };
+
+    const job = saveJob({
+      url: `file://${req.file.originalname}`,
+      type: 'parse',
+      status: 'success',
+      result_markdown: markdown,
+      metadata_json: JSON.stringify(metadata),
+    });
+
+    res.json({
+      id: job.id,
+      markdown,
+      metadata: { url: req.file.originalname, type: 'parse', fileType: ext, durationMs, ...rawMeta, createdAt: job.created_at },
+    });
+  } catch (err) {
+    const message = err.message || 'Firecrawl error';
+    const durationMs = Date.now() - startTime;
+
+    saveJob({
+      url: `file://${req.file.originalname}`,
+      type: 'parse',
+      status: 'error',
+      result_markdown: message,
+      metadata_json: JSON.stringify({ fileType: ext, durationMs, originalName: req.file.originalname }),
+    });
+
+    res.status(500).json({ error: message });
+  } finally {
+    try { unlinkSync(req.file.path); } catch {}
+  }
+});
+
 // ── GET /api/jobs ───────────────────────────────────────
 
 app.get('/api/jobs', (req, res) => {
@@ -129,7 +213,6 @@ app.delete('/api/jobs/:id', (req, res) => {
 
 // ── Static files (production) ───────────────────────────
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const clientDist = join(__dirname, '..', 'client', 'dist');
 app.use(express.static(clientDist));
 app.get('/{*splat}', (req, res, next) => {
