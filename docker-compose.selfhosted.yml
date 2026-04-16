@@ -25,7 +25,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - REDIS_RATE_LIMIT_URL=redis://redis:6379
       - NUQ_RABBITMQ_URL=amqp://rabbitmq:5672
-      - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@nuq-postgres:5432/firecrawl
+      - NUQ_DATABASE_URL=postgresql://postgres:postgres@nuq-postgres:5432/postgres
       - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
       - USE_DB_AUTHENTICATION=false
       - NUM_WORKERS_PER_QUEUE=1
@@ -72,13 +72,11 @@ services:
   nuq-postgres:
     image: ghcr.io/firecrawl/nuq-postgres:latest
     environment:
-      - POSTGRES_USER=firecrawl
-      - POSTGRES_PASSWORD=firecrawl
-      - POSTGRES_DB=firecrawl
+      - POSTGRES_PASSWORD=postgres
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U firecrawl -d firecrawl"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
