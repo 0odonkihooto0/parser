@@ -1,0 +1,11 @@
+node_modules
+dist
+client/dist
+.git
+.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+*.db-shm
+*.db-wal

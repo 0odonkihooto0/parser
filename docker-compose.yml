@@ -1,0 +1,27 @@
+services:
+  app:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - FIRECRAWL_URL=http://firecrawl:3002
+      - DB_PATH=/app/data/parser.db
+    volumes:
+      - parser-data:/app/data
+    depends_on:
+      firecrawl:
+        condition: service_started
+    restart: unless-stopped
+
+  firecrawl:
+    image: mendableai/firecrawl:latest
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+      - HOST=0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  parser-data:

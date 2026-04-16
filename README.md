@@ -36,6 +36,43 @@ npm run dev
 
 Перейдите в браузере по адресу: [http://localhost:5173](http://localhost:5173)
 
+## Запуск через Docker
+
+### 1. Установите Docker Desktop
+
+Скачайте и установите [Docker Desktop](https://www.docker.com/products/docker-desktop/) для вашей ОС (Windows / macOS / Linux).
+
+### 2. Клонируйте репозиторий
+
+```bash
+git clone https://github.com/0odonkihooto0/parser.git
+cd parser
+```
+
+### 3. Запустите
+
+```bash
+docker compose up --build
+```
+
+Это поднимет два контейнера:
+- **app** — наше приложение (порт 4000)
+- **firecrawl** — локальный Firecrawl (порт 3002)
+
+### 4. Откройте приложение
+
+Перейдите в браузере: [http://localhost:4000](http://localhost:4000)
+
+### Остановка
+
+```bash
+docker compose down
+```
+
+Данные (SQLite) сохраняются в Docker volume `parser-data` и переживают перезапуск.
+
+---
+
 ## Продакшн-сборка
 
 ```bash
