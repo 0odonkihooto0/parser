@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { saveJob, updateJob, getAllJobs, getJobById, deleteJob } from './db.js';
 
@@ -124,6 +126,16 @@ app.delete('/api/jobs/:id', (req, res) => {
   const deleted = deleteJob(Number(req.params.id));
   if (!deleted) return res.status(404).json({ error: 'Job not found' });
   res.json({ success: true });
+});
+
+// ── Static files (production) ───────────────────────────
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const clientDist = join(__dirname, '..', 'client', 'dist');
+app.use(express.static(clientDist));
+app.get('/{*splat}', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(join(clientDist, 'index.html'));
 });
 
 // ── Запуск ──────────────────────────────────────────────
