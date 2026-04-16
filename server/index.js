@@ -9,10 +9,9 @@ import { saveJob, updateJob, getAllJobs, getJobById, deleteJob } from './db.js';
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-const firecrawl = new FirecrawlApp({
-  apiKey: 'local',
-  apiUrl: process.env.FIRECRAWL_URL || 'http://localhost:3002',
-});
+const firecrawlOpts = { apiKey: process.env.FIRECRAWL_API_KEY || 'local' };
+if (process.env.FIRECRAWL_URL) firecrawlOpts.apiUrl = process.env.FIRECRAWL_URL;
+const firecrawl = new FirecrawlApp(firecrawlOpts);
 
 app.use(cors());
 app.use(express.json());

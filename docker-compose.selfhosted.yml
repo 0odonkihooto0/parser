@@ -1,0 +1,49 @@
+services:
+  app:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - FIRECRAWL_API_KEY=local
+      - FIRECRAWL_URL=http://firecrawl-api:3002
+      - DB_PATH=/app/data/parser.db
+    volumes:
+      - parser-data:/app/data
+    depends_on:
+      firecrawl-api:
+        condition: service_started
+    restart: unless-stopped
+
+  firecrawl-api:
+    image: ghcr.io/mendableai/firecrawl:latest
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - PORT=3002
+      - HOST=0.0.0.0
+      - USE_DB_AUTHENTICATION=false
+      - NUM_WORKERS_PER_QUEUE=1
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  firecrawl-worker:
+    image: ghcr.io/mendableai/firecrawl:latest
+    command: ["node", "--max-old-space-size=8192", "dist/src/services/queue-worker.js"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - USE_DB_AUTHENTICATION=false
+      - NUM_WORKERS_PER_QUEUE=1
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  parser-data:
+  redis-data:

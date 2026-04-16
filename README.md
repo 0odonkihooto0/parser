@@ -49,17 +49,25 @@ git clone https://github.com/0odonkihooto0/parser.git
 cd parser
 ```
 
-### 3. Запустите
+### 3. Настройте API-ключ
+
+```bash
+cp .env.example .env
+```
+
+Откройте `.env` и вставьте ключ от [firecrawl.dev](https://firecrawl.dev):
+
+```
+FIRECRAWL_API_KEY=fc-ваш_ключ
+```
+
+### 4. Запустите
 
 ```bash
 docker compose up --build
 ```
 
-Это поднимет два контейнера:
-- **app** — наше приложение (порт 4000)
-- **firecrawl** — локальный Firecrawl (порт 3002)
-
-### 4. Откройте приложение
+### 5. Откройте приложение
 
 Перейдите в браузере: [http://localhost:4000](http://localhost:4000)
 
@@ -70,6 +78,16 @@ docker compose down
 ```
 
 Данные (SQLite) сохраняются в Docker volume `parser-data` и переживают перезапуск.
+
+### Self-hosted Firecrawl (без API-ключа)
+
+Если не хотите использовать облачный Firecrawl, можно поднять его локально:
+
+```bash
+docker compose -f docker-compose.selfhosted.yml up --build
+```
+
+Это поднимет 4 контейнера: app, firecrawl-api, firecrawl-worker, redis.
 
 ---
 
