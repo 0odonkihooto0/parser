@@ -24,14 +24,17 @@ app.post('/api/scrape', async (req, res) => {
     return res.status(400).json({ error: 'url обязателен и должен начинаться с http' });
   }
 
+  const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase();
+  const startTime = Date.now();
+
   try {
     let markdown = '';
-    let metadata = null;
+    let rawMeta = null;
 
     if (mode === 'scrape') {
       const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
       markdown = result.markdown ?? '';
-      metadata = result.metadata ?? null;
+      rawMeta = result.metadata ?? null;
 
     } else if (mode === 'crawl') {
       const result = await firecrawl.crawlUrl(url, {
@@ -40,22 +43,21 @@ app.post('/api/scrape', async (req, res) => {
       });
       const pages = result.data ?? [];
       markdown = pages.map((p) => p.markdown ?? '').join('\n\n---\n\n');
-      metadata = { pagesCount: pages.length };
+      rawMeta = { pagesCount: pages.length };
 
     } else if (mode === 'parse') {
-      const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase();
-      const docFormats = ['xlsx', 'xls', 'docx', 'doc', 'odt', 'rtf'];
+      const docFormats = ['xlsx', 'xls', 'docx', 'doc'];
 
       if (ext === 'pdf') {
         const result = await firecrawl.scrapeUrl(url, {
           parsers: [{ type: 'pdf', mode: pdfMode }],
         });
         markdown = result.markdown ?? '';
-        metadata = result.metadata ?? null;
+        rawMeta = result.metadata ?? null;
       } else if (docFormats.includes(ext)) {
         const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
         markdown = result.markdown ?? '';
-        metadata = result.metadata ?? null;
+        rawMeta = result.metadata ?? null;
       } else {
         return res.status(400).json({ error: 'Неподдерживаемый формат файла' });
       }
@@ -64,28 +66,37 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(400).json({ error: 'mode должен быть scrape, crawl или parse' });
     }
 
+    const durationMs = Date.now() - startTime;
+
+    const metadata = {
+      ...(rawMeta || {}),
+      fileType: ext || null,
+      durationMs,
+    };
+
     const job = saveJob({
       url,
       type: mode,
       status: 'success',
       result_markdown: markdown,
-      metadata_json: metadata ? JSON.stringify(metadata) : null,
+      metadata_json: JSON.stringify(metadata),
     });
 
     res.json({
       id: job.id,
       markdown,
-      metadata: { url, type: mode, createdAt: job.created_at },
+      metadata: { url, type: mode, fileType: ext || null, durationMs, ...rawMeta, createdAt: job.created_at },
     });
   } catch (err) {
     const message = err.message || 'Firecrawl error';
+    const durationMs = Date.now() - startTime;
 
     saveJob({
       url,
       type: mode,
       status: 'error',
       result_markdown: message,
-      metadata_json: null,
+      metadata_json: JSON.stringify({ fileType: ext || null, durationMs }),
     });
 
     res.status(500).json({ error: message });

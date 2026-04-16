@@ -17,10 +17,35 @@ function StatusBadge({ status }) {
 
 // ── UrlInput ────────────────────────────────────────────
 
+const PARSE_EXTENSIONS = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+
+function getExtension(url) {
+  try {
+    const path = new URL(url).pathname;
+    const dot = path.lastIndexOf('.');
+    return dot !== -1 ? path.slice(dot + 1).toLowerCase() : '';
+  } catch {
+    return '';
+  }
+}
+
 function UrlInput({ onSubmit, loading }) {
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState('scrape');
   const [pdfMode, setPdfMode] = useState('auto');
+  const [autoDetected, setAutoDetected] = useState(false);
+
+  const handleUrlChange = (value) => {
+    setUrl(value);
+    const ext = getExtension(value);
+    if (PARSE_EXTENSIONS.includes(ext)) {
+      setMode('parse');
+      setAutoDetected(true);
+    } else if (autoDetected) {
+      setMode('scrape');
+      setAutoDetected(false);
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -28,27 +53,33 @@ function UrlInput({ onSubmit, loading }) {
     onSubmit({ url: url.trim(), mode, pdfMode });
   };
 
+  const ext = getExtension(url);
+  const isPdf = ext === 'pdf';
+
   return (
     <form className="url-input" onSubmit={handleSubmit}>
       <input
         type="url"
         placeholder="https://example.com"
         value={url}
-        onChange={(e) => setUrl(e.target.value)}
+        onChange={(e) => handleUrlChange(e.target.value)}
         required
       />
       <div className="url-input-controls">
-        <select value={mode} onChange={(e) => setMode(e.target.value)}>
+        <select value={mode} onChange={(e) => { setMode(e.target.value); setAutoDetected(false); }}>
           <option value="scrape">Scrape</option>
           <option value="crawl">Crawl</option>
           <option value="parse">Parse</option>
         </select>
-        {mode === 'parse' && (
+        {mode === 'parse' && isPdf && (
           <select value={pdfMode} onChange={(e) => setPdfMode(e.target.value)}>
             <option value="auto">PDF: auto</option>
             <option value="fast">PDF: fast</option>
             <option value="ocr">PDF: ocr</option>
           </select>
+        )}
+        {autoDetected && (
+          <span className="auto-hint">.{ext} — режим parse</span>
         )}
         <button type="submit" disabled={loading}>
           {loading ? 'Загрузка...' : 'Запустить'}
@@ -60,7 +91,29 @@ function UrlInput({ onSubmit, loading }) {
 
 // ── ResultViewer ────────────────────────────────────────
 
-function ResultViewer({ markdown, jobId }) {
+function ResultMeta({ metadata }) {
+  if (!metadata) return null;
+  const items = [];
+  if (metadata.fileType) items.push({ label: 'Тип файла', value: `.${metadata.fileType}` });
+  if (metadata.pagesCount != null) items.push({ label: 'Страниц', value: metadata.pagesCount });
+  if (metadata.numberOfPages != null) items.push({ label: 'Страниц PDF', value: metadata.numberOfPages });
+  if (metadata.durationMs != null) {
+    const sec = (metadata.durationMs / 1000).toFixed(1);
+    items.push({ label: 'Время', value: `${sec}с` });
+  }
+  if (items.length === 0) return null;
+  return (
+    <div className="result-meta">
+      {items.map((it) => (
+        <span key={it.label} className="meta-chip">
+          <span className="meta-label">{it.label}:</span> {it.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ResultViewer({ markdown, jobId, metadata }) {
   if (!markdown) {
     return <div className="result-viewer empty">Результат появится здесь</div>;
   }
@@ -81,6 +134,7 @@ function ResultViewer({ markdown, jobId }) {
   return (
     <div className="result-viewer">
       <div className="result-toolbar">
+        <ResultMeta metadata={metadata} />
         <button onClick={handleCopy}>Скопировать</button>
         <button onClick={handleDownload}>Скачать .md</button>
       </div>
@@ -158,7 +212,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Ошибка сервера');
-      setActiveJob({ id: data.id, markdown: data.markdown, status: 'success' });
+      setActiveJob({ id: data.id, markdown: data.markdown, metadata: data.metadata, status: 'success' });
       fetchJobs();
     } catch (err) {
       setError(err.message);
@@ -173,7 +227,8 @@ export default function App() {
       const res = await fetch(`/api/jobs/${id}`);
       if (!res.ok) return;
       const job = await res.json();
-      setActiveJob({ id: job.id, markdown: job.result_markdown, status: job.status });
+      const meta = job.metadata_json ? JSON.parse(job.metadata_json) : null;
+      setActiveJob({ id: job.id, markdown: job.result_markdown, metadata: meta, status: job.status });
       setError(job.status === 'error' ? job.result_markdown : null);
     } catch {
       /* ignore */
@@ -211,7 +266,7 @@ export default function App() {
         <main className="content">
           {loading && <StatusBadge status="running" />}
           {error && <div className="error-msg">{error}</div>}
-          <ResultViewer markdown={activeJob?.markdown} jobId={activeJob?.id} />
+          <ResultViewer markdown={activeJob?.markdown} jobId={activeJob?.id} metadata={activeJob?.metadata} />
         </main>
       </div>
     </div>
