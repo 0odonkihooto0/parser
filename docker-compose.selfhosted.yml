@@ -25,17 +25,21 @@ services:
       - REDIS_URL=redis://redis:6379
       - REDIS_RATE_LIMIT_URL=redis://redis:6379
       - NUQ_RABBITMQ_URL=amqp://rabbitmq:5672
-      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
       - NUQ_DATABASE_URL=postgresql://firecrawl:firecrawl@nuq-postgres:5432/firecrawl
+      - PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
       - USE_DB_AUTHENTICATION=false
       - NUM_WORKERS_PER_QUEUE=1
       - CRAWL_CONCURRENT_REQUESTS=5
       - MAX_CONCURRENT_JOBS=3
     depends_on:
-      - redis
-      - rabbitmq
-      - playwright-service
-      - nuq-postgres
+      nuq-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
     restart: unless-stopped
 
   playwright-service:
@@ -48,10 +52,21 @@ services:
     image: redis:7-alpine
     volumes:
       - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3-management
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
     restart: unless-stopped
 
   nuq-postgres:
@@ -62,6 +77,12 @@ services:
       - POSTGRES_DB=firecrawl
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firecrawl -d firecrawl && psql -U firecrawl -d firecrawl -c 'SELECT 1 FROM pg_namespace WHERE nspname = $$nuq$$' | grep -q 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
