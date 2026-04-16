@@ -1,0 +1,17 @@
+node_modules
+dist
+dist-ssr
+.env
+*.local
+*.log
+npm-debug.log*
+.DS_Store
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sqlite
+*.db
