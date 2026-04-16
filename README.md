@@ -81,13 +81,25 @@ docker compose down
 
 ### Self-hosted Firecrawl (без API-ключа)
 
-Если не хотите использовать облачный Firecrawl, можно поднять его локально:
+Если не хотите использовать облачный Firecrawl, можно поднять его полностью локально.
+API-ключ не нужен — всё работает на вашей машине.
 
 ```bash
 docker compose -f docker-compose.selfhosted.yml up --build
 ```
 
-Это поднимет 4 контейнера: app, firecrawl-api, firecrawl-worker, redis.
+Это поднимет 6 контейнеров:
+
+| Контейнер | Назначение |
+|-----------|------------|
+| app | Наше приложение (порт 4000) |
+| firecrawl-api | Firecrawl API (порт 3002) |
+| playwright-service | Браузер для рендера JS-страниц |
+| redis | Кэширование и очереди |
+| rabbitmq | Очередь задач |
+| nuq-postgres | База данных Firecrawl |
+
+Минимальные требования: 4 GB RAM, 10 GB свободного места на диске.
 
 ---
 
