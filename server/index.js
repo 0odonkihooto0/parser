@@ -56,7 +56,7 @@ app.post('/api/scrape', async (req, res) => {
     } else if (mode === 'crawl') {
       const result = await firecrawl.crawlUrl(url, {
         limit: 10,
-        scrapeOptions: { formats: ['markdown'] },
+        scrapeOptions: { formats: ['markdown'], timeout: 180000 },
       });
       const pages = result.data ?? [];
       markdown = pages.map((p) => p.markdown ?? '').join('\n\n---\n\n');
