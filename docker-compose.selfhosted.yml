@@ -3,16 +3,11 @@ services:
     build: .
     ports:
       - "4000:4000"
-    hostname: parser-app.local
-    networks:
-      default:
-        aliases:
-          - parser-app.local
     environment:
       - PORT=4000
       - FIRECRAWL_API_KEY=local
       - FIRECRAWL_URL=http://firecrawl-api:3002
-      - APP_URL=http://parser-app.local:4000
+      - APP_URL=http://host.docker.internal:4000
       - DB_PATH=/app/data/parser.db
     volumes:
       - parser-data:/app/data
@@ -25,6 +20,8 @@ services:
     image: ghcr.io/firecrawl/firecrawl:latest
     ports:
       - "3002:3002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - PORT=3002
       - HOST=0.0.0.0
