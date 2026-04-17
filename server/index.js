@@ -49,7 +49,7 @@ app.post('/api/scrape', async (req, res) => {
     let rawMeta = null;
 
     if (mode === 'scrape') {
-      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
+      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'], timeout: 180000 });
       markdown = result.markdown ?? '';
       rawMeta = result.metadata ?? null;
 
@@ -69,7 +69,7 @@ app.post('/api/scrape', async (req, res) => {
         return res.status(400).json({ error: 'Неподдерживаемый формат файла' });
       }
 
-      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'] });
+      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'], timeout: 180000 });
       markdown = result.markdown ?? '';
       rawMeta = result.metadata ?? null;
 
@@ -134,7 +134,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
 
   try {
-    const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'] });
+    const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'], timeout: 180000 });
     const markdown = result.markdown ?? '';
     const rawMeta = result.metadata ?? null;
 
