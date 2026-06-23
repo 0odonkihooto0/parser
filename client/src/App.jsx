@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import Markdown from 'react-markdown';
+import { getExtension } from './utils.js';
 import './App.css';
 
 // ── StatusBadge ─────────────────────────────────────────
 
-function StatusBadge({ status }) {
+export function StatusBadge({ status }) {
   const labels = {
     pending: 'Ожидание',
     running: 'Загрузка...',
@@ -18,16 +19,6 @@ function StatusBadge({ status }) {
 // ── UrlInput ────────────────────────────────────────────
 
 const PARSE_EXTENSIONS = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
-
-function getExtension(url) {
-  try {
-    const path = new URL(url).pathname;
-    const dot = path.lastIndexOf('.');
-    return dot !== -1 ? path.slice(dot + 1).toLowerCase() : '';
-  } catch {
-    return '';
-  }
-}
 
 function UrlInput({ onSubmit, loading }) {
   const [url, setUrl] = useState('');
