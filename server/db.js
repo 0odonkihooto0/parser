@@ -21,10 +21,6 @@ db.exec(`
   )
 `);
 
-const insertJob = db.prepare(`
-  INSERT INTO jobs (url, type, status) VALUES (@url, @type, @status)
-`);
-
 const insertJobFull = db.prepare(`
   INSERT INTO jobs (url, type, status, result_markdown, metadata_json)
   VALUES (@url, @type, @status, @result_markdown, @metadata_json)
@@ -34,7 +30,10 @@ const updateJobStmt = db.prepare(`
   UPDATE jobs SET status = @status, result_markdown = @result_markdown, metadata_json = @metadata_json WHERE id = @id
 `);
 
-const selectAllJobs = db.prepare(`SELECT * FROM jobs ORDER BY created_at DESC`);
+const selectAllJobs = db.prepare(`
+  SELECT id, url, type, status, metadata_json, created_at
+  FROM jobs ORDER BY created_at DESC
+`);
 
 const selectJobById = db.prepare(`SELECT * FROM jobs WHERE id = ?`);
 

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mendable/firecrawl-js": "^1.16.0",
@@ -12,9 +13,14 @@
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.5.2",
     "mammoth": "^1.12.0",
     "multer": "^2.1.1",
     "pdf-parse": "^2.4.5",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.9"
   }
 }
