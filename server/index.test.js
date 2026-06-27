@@ -143,6 +143,28 @@ describe('POST /api/upload — success (mocked Firecrawl)', () => {
     expect(Buffer.isBuffer(file.data)).toBe(true);
     expect(opts.parsers).toEqual([{ type: 'pdf', mode: 'fast' }]);
   });
+
+  it('falls back to URL-based scrape when /parse returns 404', async () => {
+    fc.parse.mockRejectedValueOnce(Object.assign(new Error('Cannot POST /v2/parse'), { status: 404 }));
+    fc.scrape.mockClear();
+    const res = await request(app)
+      .post('/api/upload')
+      .attach('file', Buffer.from('%PDF-1.4 hello'), 'doc.pdf');
+    expect(res.status).toBe(200);
+    expect(res.body.markdown).toBe('# Scraped'); // came from the scrape fallback
+    const [fileUrl] = fc.scrape.mock.calls.at(-1);
+    expect(fileUrl).toMatch(/\/uploads\/[\w-]+\.pdf$/);
+  });
+
+  it('does not fall back on a non-404 parse error', async () => {
+    fc.parse.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 500 }));
+    fc.scrape.mockClear();
+    const res = await request(app)
+      .post('/api/upload')
+      .attach('file', Buffer.from('%PDF-1.4 hello'), 'doc.pdf');
+    expect(res.status).toBe(500);
+    expect(fc.scrape).not.toHaveBeenCalled();
+  });
 });
 
 describe('GET /api/jobs', () => {

@@ -4,6 +4,7 @@ import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import net from 'net';
 import dns from 'dns/promises';
 import multer from 'multer';
@@ -33,6 +34,15 @@ const firecrawl = new Firecrawl({
   timeoutMs: 200000,
   ...(process.env.FIRECRAWL_URL ? { apiUrl: process.env.FIRECRAWL_URL } : {}),
 });
+
+// Base URL at which THIS server is reachable *by the Firecrawl instance*. Only
+// used for the upload fallback below; for self-hosted Firecrawl set it to a name
+// resolvable inside its network (see docker-compose.selfhosted.yml).
+const INTERNAL_BASE_URL = process.env.INTERNAL_BASE_URL || `http://localhost:${PORT}`;
+
+// Transient store for uploaded bytes that the fallback serves to Firecrawl. An
+// entry lives only for the duration of a single scrape call.
+const pendingUploads = new Map();
 
 // ── SSRF protection ─────────────────────────────────────
 
@@ -91,12 +101,36 @@ async function validateScrapeUrl(rawUrl) {
 
 // ── Uploads ─────────────────────────────────────────────
 
-// Keep uploads in memory: the bytes are streamed straight to Firecrawl's parse
-// endpoint, so nothing touches the disk (no temp files, no path-traversal surface).
+// Keep uploads in memory: the bytes are streamed straight to Firecrawl, so
+// nothing touches the disk (no temp files, no path-traversal surface).
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES) || 50 * 1024 * 1024 },
 });
+
+// Turn an uploaded document into markdown. Prefer Firecrawl's /parse endpoint
+// (direct upload — works on cloud and recent self-hosted images). Older
+// self-hosted images don't expose /parse and return 404; in that case fall back
+// to serving the bytes and scraping that URL, which works whenever Firecrawl can
+// reach this server (i.e. self-hosted on a shared network).
+async function parseUpload({ buffer, filename, mimetype, ext, pdfMode }) {
+  const opts = { formats: ['markdown'], timeout: 180000 };
+  const parsers = pdfParsers(ext, pdfMode);
+  if (parsers) opts.parsers = parsers;
+
+  try {
+    return await firecrawl.parse({ data: buffer, filename, contentType: mimetype }, opts);
+  } catch (err) {
+    if (err?.status !== 404) throw err;
+    const key = `${randomUUID()}.${ext}`;
+    pendingUploads.set(key, { buffer, contentType: mimetype || 'application/octet-stream' });
+    try {
+      return await firecrawl.scrape(`${INTERNAL_BASE_URL}/uploads/${key}`, opts);
+    } finally {
+      pendingUploads.delete(key);
+    }
+  }
+}
 
 // ── Middleware ──────────────────────────────────────────
 
@@ -114,6 +148,16 @@ const apiLimiter = rateLimit({
   message: { error: 'Слишком много запросов, попробуйте позже.' },
 });
 app.use('/api', apiLimiter);
+
+// ── Internal: serve a pending upload to Firecrawl (fallback only) ──
+// Keys are server-generated UUIDs looked up by exact match, so there is no
+// path-traversal surface, and entries exist only while a scrape is in flight.
+app.get('/uploads/:file', (req, res) => {
+  const entry = pendingUploads.get(req.params.file);
+  if (!entry) return res.status(404).end();
+  res.setHeader('Content-Type', entry.contentType);
+  res.send(entry.buffer);
+});
 
 // ── POST /api/scrape ────────────────────────────────────
 
@@ -218,16 +262,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   const startTime = Date.now();
 
   try {
-    // Stream the uploaded bytes straight to Firecrawl's parse endpoint — no need
-    // for Firecrawl to be able to reach this server over the network.
-    const opts = { formats: ['markdown'], timeout: 180000 };
-    const parsers = pdfParsers(ext, pdfMode);
-    if (parsers) opts.parsers = parsers;
-
-    const doc = await firecrawl.parse(
-      { data: req.file.buffer, filename: req.file.originalname, contentType: req.file.mimetype },
-      opts,
-    );
+    const doc = await parseUpload({
+      buffer: req.file.buffer,
+      filename: req.file.originalname,
+      mimetype: req.file.mimetype,
+      ext,
+      pdfMode,
+    });
     const markdown = doc.markdown ?? '';
     const rawMeta = doc.metadata ?? null;
 
