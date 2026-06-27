@@ -7,6 +7,8 @@ let app;
 beforeAll(async () => {
   process.env.DB_PATH = ':memory:';
   delete process.env.ALLOW_PRIVATE_URLS;
+  // Tiny upload cap so the "file too large" path is cheap to exercise.
+  process.env.MAX_UPLOAD_BYTES = '1024';
   ({ app } = await import('./index.js'));
 });
 
@@ -65,6 +67,17 @@ describe('POST /api/upload — validation', () => {
       .attach('file', Buffer.from('plain text content'), 'malicious.txt');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/Неподдерживаемый формат/);
+  });
+
+  it('rejects an oversized file with JSON and no stack trace', async () => {
+    const oversized = Buffer.alloc(2048, 0x61); // exceeds the 1 KB test cap
+    const res = await request(app)
+      .post('/api/upload')
+      .attach('file', oversized, 'big.pdf');
+    expect(res.status).toBe(413);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body.error).toBe('Файл слишком большой');
+    expect(res.text).not.toMatch(/MulterError|\.js:/); // no leaked internals
   });
 });
 

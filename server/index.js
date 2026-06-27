@@ -94,7 +94,7 @@ const upload = multer({
       cb(null, `${Date.now()}-${randomUUID()}${ext}`);
     },
   }),
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES) || 50 * 1024 * 1024 },
 });
 
 // ── Middleware ──────────────────────────────────────────
@@ -289,6 +289,24 @@ app.use(express.static(clientDist));
 app.get('/{*splat}', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.sendFile(join(clientDist, 'index.html'));
+});
+
+// ── Error handling ──────────────────────────────────────
+
+// Middleware errors (e.g. multer's file-size limit or a malformed JSON body)
+// would otherwise be rendered as an HTML page that leaks the stack trace and
+// can't be parsed by the client. Convert them all to safe JSON. Must stay last,
+// after every route; the four-arg signature is what marks it as an error handler.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err instanceof multer.MulterError) {
+    const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+    return res
+      .status(tooLarge ? 413 : 400)
+      .json({ error: tooLarge ? 'Файл слишком большой' : 'Не удалось загрузить файл' });
+  }
+  console.error('[error]', err);
+  res.status(500).json({ error: GENERIC_ERROR });
 });
 
 // ── Запуск ──────────────────────────────────────────────
