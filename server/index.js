@@ -2,15 +2,12 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import { dirname, join, extname } from 'path';
+import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { existsSync, mkdirSync } from 'fs';
-import { unlink } from 'fs/promises';
-import { randomUUID } from 'crypto';
 import net from 'net';
 import dns from 'dns/promises';
 import multer from 'multer';
-import FirecrawlApp from '@mendable/firecrawl-js';
+import { Firecrawl } from '@mendable/firecrawl-js';
 import { saveJob, getAllJobs, getJobById, deleteJob } from './db.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -19,13 +16,23 @@ const PORT = process.env.PORT || 4000;
 
 const GENERIC_ERROR = 'Не удалось обработать запрос. Попробуйте позже.';
 
-const firecrawlOpts = { apiKey: process.env.FIRECRAWL_API_KEY || 'local' };
-if (process.env.FIRECRAWL_URL) firecrawlOpts.apiUrl = process.env.FIRECRAWL_URL;
-const firecrawl = new FirecrawlApp(firecrawlOpts);
+// Document formats Firecrawl can turn into markdown, and the PDF parser modes
+// the UI exposes.
+const DOC_FORMATS = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+const PDF_MODES = ['auto', 'fast', 'ocr'];
 
-const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
-const uploadsDir = join(__dirname, 'uploads');
-if (!existsSync(uploadsDir)) mkdirSync(uploadsDir);
+// Build Firecrawl's `parsers` option from the UI's pdfMode. Only meaningful for
+// PDFs; returns undefined otherwise so the request stays clean.
+function pdfParsers(ext, pdfMode) {
+  if (ext !== 'pdf' || !PDF_MODES.includes(pdfMode)) return undefined;
+  return [{ type: 'pdf', mode: pdfMode }];
+}
+
+const firecrawl = new Firecrawl({
+  apiKey: process.env.FIRECRAWL_API_KEY || 'local',
+  timeoutMs: 200000,
+  ...(process.env.FIRECRAWL_URL ? { apiUrl: process.env.FIRECRAWL_URL } : {}),
+});
 
 // ── SSRF protection ─────────────────────────────────────
 
@@ -84,16 +91,10 @@ async function validateScrapeUrl(rawUrl) {
 
 // ── Uploads ─────────────────────────────────────────────
 
+// Keep uploads in memory: the bytes are streamed straight to Firecrawl's parse
+// endpoint, so nothing touches the disk (no temp files, no path-traversal surface).
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: uploadsDir,
-    // Never trust the client-supplied name for the on-disk path: use a random
-    // id and keep only a sanitized extension to avoid path traversal.
-    filename: (req, file, cb) => {
-      const ext = extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, '');
-      cb(null, `${Date.now()}-${randomUUID()}${ext}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: Number(process.env.MAX_UPLOAD_BYTES) || 50 * 1024 * 1024 },
 });
 
@@ -101,10 +102,9 @@ const upload = multer({
 
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean)
-  : [APP_URL, 'http://localhost:5173', `http://localhost:${PORT}`];
+  : ['http://localhost:5173', `http://localhost:${PORT}`];
 app.use(cors({ origin: corsOrigins }));
 app.use(express.json());
-app.use('/uploads', express.static(uploadsDir));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -118,7 +118,7 @@ app.use('/api', apiLimiter);
 // ── POST /api/scrape ────────────────────────────────────
 
 app.post('/api/scrape', async (req, res) => {
-  const { url, mode = 'scrape' } = req.body;
+  const { url, mode = 'scrape', pdfMode = 'auto' } = req.body;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url обязателен' });
@@ -140,30 +140,28 @@ app.post('/api/scrape', async (req, res) => {
     let markdown = '';
     let rawMeta = null;
 
-    if (mode === 'scrape') {
-      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'], timeout: 180000 });
-      markdown = result.markdown ?? '';
-      rawMeta = result.metadata ?? null;
-
-    } else if (mode === 'crawl') {
-      const result = await firecrawl.crawlUrl(url, {
+    if (mode === 'crawl') {
+      const job = await firecrawl.crawl(url, {
         limit: 10,
         scrapeOptions: { formats: ['markdown'], timeout: 180000 },
       });
-      const pages = result.data ?? [];
+      const pages = job.data ?? [];
       markdown = pages.map((p) => p.markdown ?? '').join('\n\n---\n\n');
       rawMeta = { pagesCount: pages.length };
 
-    } else if (mode === 'parse') {
-      const docFormats = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
-
-      if (!docFormats.includes(ext)) {
+    } else {
+      // scrape and parse both go through /scrape; Firecrawl auto-detects document
+      // URLs (PDF, DOCX, XLSX, …) and converts them to markdown the same way.
+      if (mode === 'parse' && !DOC_FORMATS.includes(ext)) {
         return res.status(400).json({ error: 'Неподдерживаемый формат файла' });
       }
+      const opts = { formats: ['markdown'], timeout: 180000 };
+      const parsers = pdfParsers(ext, pdfMode);
+      if (parsers) opts.parsers = parsers;
 
-      const result = await firecrawl.scrapeUrl(url, { formats: ['markdown'], timeout: 180000 });
-      markdown = result.markdown ?? '';
-      rawMeta = result.metadata ?? null;
+      const doc = await firecrawl.scrape(url, opts);
+      markdown = doc.markdown ?? '';
+      rawMeta = doc.metadata ?? null;
     }
 
     const durationMs = Date.now() - startTime;
@@ -211,20 +209,27 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   }
 
   const ext = req.file.originalname.split('.').pop()?.toLowerCase();
-  const allowed = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
 
-  if (!allowed.includes(ext)) {
-    await unlink(req.file.path).catch(() => {});
-    return res.status(400).json({ error: `Неподдерживаемый формат: .${ext}. Допустимо: ${allowed.join(', ')}` });
+  if (!DOC_FORMATS.includes(ext)) {
+    return res.status(400).json({ error: `Неподдерживаемый формат: .${ext}. Допустимо: ${DOC_FORMATS.join(', ')}` });
   }
 
-  const fileUrl = `${APP_URL}/uploads/${req.file.filename}`;
+  const { pdfMode = 'auto' } = req.body;
   const startTime = Date.now();
 
   try {
-    const result = await firecrawl.scrapeUrl(fileUrl, { formats: ['markdown'], timeout: 180000 });
-    const markdown = result.markdown ?? '';
-    const rawMeta = result.metadata ?? null;
+    // Stream the uploaded bytes straight to Firecrawl's parse endpoint — no need
+    // for Firecrawl to be able to reach this server over the network.
+    const opts = { formats: ['markdown'], timeout: 180000 };
+    const parsers = pdfParsers(ext, pdfMode);
+    if (parsers) opts.parsers = parsers;
+
+    const doc = await firecrawl.parse(
+      { data: req.file.buffer, filename: req.file.originalname, contentType: req.file.mimetype },
+      opts,
+    );
+    const markdown = doc.markdown ?? '';
+    const rawMeta = doc.metadata ?? null;
 
     const durationMs = Date.now() - startTime;
     const metadata = { ...(rawMeta || {}), fileType: ext, durationMs, originalName: req.file.originalname };
@@ -255,8 +260,6 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     });
 
     res.status(500).json({ error: GENERIC_ERROR });
-  } finally {
-    await unlink(req.file.path).catch(() => {});
   }
 });
 

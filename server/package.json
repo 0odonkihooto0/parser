@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@mendable/firecrawl-js": "^1.16.0",
+    "@mendable/firecrawl-js": "^4.28.3",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
